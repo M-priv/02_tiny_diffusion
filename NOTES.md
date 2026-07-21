@@ -123,3 +123,35 @@ Decoder Path:
 (128, 7, 7) ──> Upsample ──> (128, 14, 14) ──> concat(h2) ──> (192, 14, 14) ──> Conv ──> (64, 14, 14)
 (64, 14, 14) ──> Upsample ──> (64, 28, 28)  ──> concat(h1) ──> (96, 28, 28)  ──> Conv ──> (32, 28, 28) ──> Output (1, 28, 28)
 ```
+
+---
+
+## 7. Diffusion Training Loop (Phase 3)
+
+The training loop learns to predict the noise $\epsilon$ added at any random timestep $t$:
+
+### MSE Loss Formulation
+Instead of predicting $x_0$ directly, the model minimizes the Mean Squared Error (MSE) between true noise $\epsilon$ and predicted noise $\hat{\epsilon}$:
+$$ \mathcal{L}_{\text{simple}} = \mathbb{E}_{t, x_0, \epsilon} \left[ \| \epsilon - \text{UNet}(x_t, t) \|^2 \right] $$
+
+### 6-Step Batch Training Routine
+1. Sample clean batch $x_0 \sim \text{MNIST}$.
+2. Sample random timesteps $t \sim \text{Uniform}(0, T-1)$.
+3. Sample Gaussian noise $\epsilon \sim \mathcal{N}(0, \mathbf{I})$.
+4. Compute noisy batch $x_t = \sqrt{\bar{\alpha}_t} x_0 + \sqrt{1 - \bar{\alpha}_t} \epsilon$.
+5. Pass through model: $\hat{\epsilon} = \text{UNet}(x_t, t)$.
+6. Backpropagate $\text{MSE}(\hat{\epsilon}, \epsilon)$ and update weights.
+
+---
+
+## 8. Reverse Denoising Sampler (Phase 4)
+
+To generate new images, we start with pure Gaussian noise $x_T \sim \mathcal{N}(0, \mathbf{I})$ and iterate backwards from $t = T-1$ down to $0$.
+
+### DDPM Reverse Step Equation
+$$ x_{t-1} = \frac{1}{\sqrt{\alpha_t}} \left( x_t - \frac{\beta_t}{\sqrt{1 - \bar{\alpha}_t}} \text{UNet}(x_t, t) \right) + \sigma_t z $$
+
+Where:
+*   $\sigma_t = \sqrt{\beta_t}$ is added stochastic noise (for $t > 0$, and $z = 0$ at $t = 0$).
+*   The subtraction $\left( x_t - \frac{\beta_t}{\sqrt{1 - \bar{\alpha}_t}} \hat{\epsilon} \right)$ strips away the estimated noise.
+*   Dividing by $\sqrt{\alpha_t}$ rescales the signal up to match the preceding timestep's variance schedule.
